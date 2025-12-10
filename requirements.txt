@@ -1,0 +1,14 @@
+# 简易即时通信工具依赖包
+
+# GUI框架
+PyQt6==6.6.1
+PyQt6-Qt6==6.6.1
+PyQt6-sip==13.6.0
+
+# 网络和数据处理（Python标准库已包含，无需额外安装）
+# - socket: 网络编程
+# - threading: 多线程支持
+# - json: JSON序列化
+# - os: 文件操作
+# - struct: 二进制数据处理
+
