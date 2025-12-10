@@ -48,12 +48,14 @@ class FileTransfer(QObject):
         创建TCP socket并开始监听连接
         """
         try:
-            # TODO: 成员四实现
-            # 1. 创建TCP socket
-            # 2. 绑定到指定端口
-            # 3. 开始监听
-            # 4. 启动接受连接的线程
-            pass
+            # 简化实现：仅初始化监听socket，确保不影响其他功能
+            self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.tcp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.tcp_socket.bind(('', self.local_member.tcp_port))
+            self.tcp_socket.listen(5)
+            self.is_running = True
+            self.listen_thread = threading.Thread(target=self._listen_loop, daemon=True)
+            self.listen_thread.start()
         except Exception as e:
             print(f"启动文件传输服务失败: {e}")
     
@@ -61,11 +63,14 @@ class FileTransfer(QObject):
         """
         停止文件传输服务
         """
-        # TODO: 成员四实现
-        # 1. 设置停止标志
-        # 2. 关闭socket
-        # 3. 等待线程结束
-        pass
+        self.is_running = False
+        if self.tcp_socket:
+            try:
+                self.tcp_socket.close()
+            except Exception:
+                pass
+        if self.listen_thread:
+            self.listen_thread.join(timeout=2)
     
     def send_file(self, file_path: str, receiver: Member):
         """
@@ -75,7 +80,6 @@ class FileTransfer(QObject):
             file_path: 要发送的文件路径
             receiver: 接收者信息
         """
-        # TODO: 成员四实现
         # 在新线程中执行，避免阻塞UI
         thread = threading.Thread(
             target=self._send_file_thread,
@@ -93,15 +97,13 @@ class FileTransfer(QObject):
             receiver: 接收者
         """
         try:
-            # TODO: 成员四实现
-            # 1. 获取文件信息（文件名、大小）
-            # 2. 连接到接收方的TCP端口
-            # 3. 发送文件信息
-            # 4. 等待接收方响应（接受/拒绝）
-            # 5. 如果接受，分块读取并发送文件
-            # 6. 更新进度（触发transfer_progress信号）
-            # 7. 发送完成后触发transfer_completed信号
-            pass
+            # 未实现完整文件传输，此处仅占位防止崩溃
+            filename = os.path.basename(file_path)
+            if not os.path.exists(file_path):
+                print(f"文件不存在: {file_path}")
+                self.transfer_completed.emit(filename, False)
+                return
+            self.transfer_completed.emit(filename, False)
         except Exception as e:
             print(f"发送文件失败: {e}")
             self.transfer_completed.emit(os.path.basename(file_path), False)
@@ -112,10 +114,13 @@ class FileTransfer(QObject):
         """
         while self.is_running:
             try:
-                # TODO: 成员四实现
-                # 1. 接受新的连接
-                # 2. 为每个连接创建新线程处理
-                pass
+                client_socket, addr = self.tcp_socket.accept()
+                handler = threading.Thread(
+                    target=self._handle_client,
+                    args=(client_socket, addr),
+                    daemon=True
+                )
+                handler.start()
             except Exception as e:
                 if self.is_running:
                     print(f"接受连接出错: {e}")
@@ -129,15 +134,8 @@ class FileTransfer(QObject):
             addr: 客户端地址
         """
         try:
-            # TODO: 成员四实现
-            # 1. 接收文件信息
-            # 2. 创建FileTransferInfo对象
-            # 3. 触发file_request_received信号（让用户确认）
-            # 4. 根据用户响应发送接受/拒绝
-            # 5. 如果接受，接收文件数据并保存
-            # 6. 更新进度
-            # 7. 完成后触发transfer_completed信号
-            pass
+            # 简化：当前未实现完整文件接收，直接关闭
+            client_socket.close()
         except Exception as e:
             print(f"接收文件失败: {e}")
         finally:
@@ -150,9 +148,8 @@ class FileTransfer(QObject):
         Args:
             file_info: 文件传输信息
         """
-        # TODO: 成员四实现
-        # 发送接受响应
-        pass
+        # 占位：未实现
+        print("暂未实现文件接收确认")
     
     def reject_file(self, file_info: FileTransferInfo):
         """
@@ -161,7 +158,5 @@ class FileTransfer(QObject):
         Args:
             file_info: 文件传输信息
         """
-        # TODO: 成员四实现
-        # 发送拒绝响应
-        pass
+        print("已拒绝文件传输（未实现实际通信）")
 

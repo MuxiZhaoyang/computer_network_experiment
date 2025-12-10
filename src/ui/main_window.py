@@ -199,74 +199,67 @@ class MainWindow(QMainWindow):
         """
         初始化核心功能模块
         """
-        # TODO: 成员七实现
-        # 参考 docs/架构优化后的成员任务.md 中的示例代码
-        
-        # 1. 获取用户名（可以弹出对话框输入）
         from ..main import get_username
-        # username = get_username()  # 取消注释
+
+        username = get_username()
+        local_ip = get_local_ip()
+        self.local_member = Member(
+            username=username,
+            ip=local_ip,
+            udp_port=DEFAULT_UDP_PORT,
+            tcp_port=DEFAULT_TCP_PORT
+        )
+
+        # 更新UI显示
+        self.label_username.setText(f"用户名：{username}")
+        self.label_ip.setText(f"IP：{local_ip}")
+
+        # 按顺序创建并启动模块
+        self.message_dispatcher = MessageDispatcher(self.local_member)
+        self.message_dispatcher.start()
+
+        self.network_discovery = NetworkDiscovery(self.local_member, self.message_dispatcher)
+        self.message_p2p = MessageP2P(self.local_member, self.message_dispatcher)
+        self.message_broadcast = MessageBroadcast(self.local_member, self.message_dispatcher)
+        self.member_manager = MemberManager(self.local_member, self.message_dispatcher)
+        self.member_refresh = MemberRefresh(self.local_member, self.message_dispatcher)
+        self.file_transfer = FileTransfer(self.local_member)
+        self.file_transfer.start()
         
-        # 2. 创建本地成员对象
-        # local_ip = get_local_ip()
-        # self.local_member = Member(
-        #     username=username,
-        #     ip=local_ip,
-        #     udp_port=DEFAULT_UDP_PORT,
-        #     tcp_port=DEFAULT_TCP_PORT
-        # )
-        
-        # 3. 创建消息分发器（最先创建）
-        # self.message_dispatcher = MessageDispatcher(self.local_member)
-        # self.message_dispatcher.start()
-        
-        # 4. 创建各个核心模块（传入dispatcher）
-        # self.network_discovery = NetworkDiscovery(self.local_member, self.message_dispatcher)
-        # self.message_p2p = MessageP2P(self.local_member, self.message_dispatcher)
-        # self.message_broadcast = MessageBroadcast(self.local_member, self.message_dispatcher)
-        # self.member_manager = MemberManager(self.local_member, self.message_dispatcher)
-        # self.member_refresh = MemberRefresh(self.local_member, self.message_dispatcher)
-        # self.file_transfer = FileTransfer(self.local_member)
-        # self.file_transfer.start()
-        
-        pass
+        # 加入后先广播一次加入
+        self.member_manager.broadcast_join()
+        # 发送发现广播
+        self.network_discovery.send_discovery_broadcast()
     
     def connect_signals(self):
         """
         连接信号和槽
         """
-        # TODO: 成员七实现
-        # 参考 docs/架构优化后的成员任务.md 中的示例代码
-        
-        # *** 第一步：连接dispatcher的信号到各模块的处理函数 ***
-        # self.message_dispatcher.discovery_message.connect(
-        #     self.network_discovery.handle_message)
-        # self.message_dispatcher.p2p_message.connect(
-        #     self.message_p2p.handle_message)
-        # self.message_dispatcher.broadcast_message.connect(
-        #     self.message_broadcast.handle_message)
-        # self.message_dispatcher.join_message.connect(
-        #     self.member_manager.handle_join_message)
-        # self.message_dispatcher.leave_message.connect(
-        #     self.member_manager.handle_leave_message)
-        # self.message_dispatcher.refresh_message.connect(
-        #     self.member_refresh.handle_refresh_message)
-        
-        # *** 第二步：连接各模块的信号到UI槽函数 ***
-        # self.network_discovery.member_discovered.connect(self.on_member_discovered)
-        # self.message_p2p.message_received.connect(self.on_message_received)
-        # self.message_broadcast.broadcast_received.connect(self.on_broadcast_received)
-        # self.file_transfer.file_request_received.connect(self.on_file_request)
-        # self.file_transfer.transfer_progress.connect(self.on_transfer_progress)
-        # self.member_manager.member_list_updated.connect(self.on_member_list_updated)
-        
-        # *** 第三步：成员列表同步到广播模块 ***
-        # self.member_manager.member_list_updated.connect(
-        #     self.message_broadcast.update_member_list)
-        
-        # *** 第四步：发送初始发现广播 ***
-        # self.network_discovery.send_discovery_broadcast()
-        
-        pass
+        # dispatcher -> modules
+        self.message_dispatcher.discovery_message.connect(
+            self.network_discovery.handle_message)
+        self.message_dispatcher.p2p_message.connect(
+            self.message_p2p.handle_message)
+        self.message_dispatcher.broadcast_message.connect(
+            self.message_broadcast.handle_message)
+        self.message_dispatcher.join_message.connect(
+            self.member_manager.handle_join_message)
+        self.message_dispatcher.leave_message.connect(
+            self.member_manager.handle_leave_message)
+        self.message_dispatcher.refresh_message.connect(
+            self.member_refresh.handle_refresh_message)
+
+        # modules -> UI
+        self.network_discovery.member_discovered.connect(self.on_member_discovered)
+        self.message_p2p.message_received.connect(self.on_message_received)
+        self.message_broadcast.broadcast_received.connect(self.on_broadcast_received)
+        self.file_transfer.file_request_received.connect(self.on_file_request)
+        self.file_transfer.transfer_progress.connect(self.on_transfer_progress)
+        self.member_manager.member_list_updated.connect(self.on_member_list_updated)
+
+        # member list sync to broadcast module
+        self.member_manager.member_list_updated.connect(
+            self.message_broadcast.update_member_list)
     
     # ========== 槽函数 ==========
     
@@ -274,42 +267,58 @@ class MainWindow(QMainWindow):
         """
         刷新成员列表按钮点击事件
         """
-        # TODO: 成员七实现
-        # 调用member_refresh.refresh_members()
-        pass
+        if self.member_refresh:
+            self.member_refresh.refresh_members()
     
     def on_send_message(self):
         """
         发送消息按钮点击事件
         """
-        # TODO: 成员七实现
-        # 1. 获取输入的消息
-        # 2. 获取选中的成员
-        # 3. 调用message_p2p.send_p2p_message()
-        # 4. 在聊天窗口显示发送的消息
-        # 5. 清空输入框
-        pass
+        content = self.input_message.text().strip()
+        if not content:
+            return
+        current_item = self.list_members.currentItem()
+        if not current_item:
+            QMessageBox.information(self, "提示", "请选择一个成员再发送消息")
+            return
+        member = current_item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(member, Member):
+            return
+        ok = self.message_p2p.send_p2p_message(member, content)
+        if ok:
+            self.append_chat_message(self.local_member.username, content)
+            self.input_message.clear()
+        else:
+            QMessageBox.warning(self, "发送失败", "消息发送失败")
     
     def on_broadcast_message(self):
         """
         广播消息按钮点击事件
         """
-        # TODO: 成员七实现
-        # 1. 获取输入的消息
-        # 2. 调用message_broadcast.send_broadcast_message()
-        # 3. 在聊天窗口显示广播的消息
-        # 4. 清空输入框
-        pass
+        content = self.input_message.text().strip()
+        if not content:
+            return
+        ok = self.message_broadcast.send_broadcast_message(content)
+        if ok:
+            self.append_chat_message(self.local_member.username, content, is_broadcast=True)
+            self.input_message.clear()
+        else:
+            QMessageBox.warning(self, "发送失败", "广播发送失败")
     
     def on_send_file(self):
         """
         发送文件按钮点击事件
         """
-        # TODO: 成员七实现
-        # 1. 获取选中的成员
-        # 2. 打开文件选择对话框
-        # 3. 调用file_transfer.send_file()
-        pass
+        current_item = self.list_members.currentItem()
+        if not current_item:
+            QMessageBox.information(self, "提示", "请选择一个成员")
+            return
+        member = current_item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(member, Member):
+            return
+        file_path, _ = QFileDialog.getOpenFileName(self, "选择要发送的文件")
+        if file_path:
+            self.file_transfer.send_file(file_path, member)
     
     def on_member_double_clicked(self, item: QListWidgetItem):
         """
@@ -318,9 +327,7 @@ class MainWindow(QMainWindow):
         Args:
             item: 被双击的列表项
         """
-        # TODO: 成员七实现
-        # 可以实现双击成员打开私聊窗口等功能
-        pass
+        self.list_members.setCurrentItem(item)
     
     def on_member_discovered(self, member: Member):
         """
@@ -329,9 +336,8 @@ class MainWindow(QMainWindow):
         Args:
             member: 发现的成员
         """
-        # TODO: 成员七实现
-        # 调用member_manager.add_member()
-        pass
+        if self.member_manager:
+            self.member_manager.add_member(member)
     
     def on_message_received(self, message: ChatMessage):
         """
@@ -340,9 +346,7 @@ class MainWindow(QMainWindow):
         Args:
             message: 接收到的消息
         """
-        # TODO: 成员七实现
-        # 在聊天窗口显示接收到的消息
-        pass
+        self.append_chat_message(message.sender.username, message.content)
     
     def on_broadcast_received(self, message: ChatMessage):
         """
@@ -351,9 +355,7 @@ class MainWindow(QMainWindow):
         Args:
             message: 广播消息
         """
-        # TODO: 成员七实现
-        # 在聊天窗口显示广播消息
-        pass
+        self.append_chat_message(message.sender.username, message.content, is_broadcast=True)
     
     def on_file_request(self, file_info: FileTransferInfo):
         """
@@ -362,9 +364,8 @@ class MainWindow(QMainWindow):
         Args:
             file_info: 文件传输信息
         """
-        # TODO: 成员七实现
-        # 弹出对话框询问是否接受文件
-        pass
+        # 简化：当前文件传输未完整实现，仅提示
+        QMessageBox.information(self, "文件请求", f"收到文件请求: {file_info.filename}")
     
     def on_transfer_progress(self, filename: str, percentage: int):
         """
@@ -374,9 +375,9 @@ class MainWindow(QMainWindow):
             filename: 文件名
             percentage: 进度百分比
         """
-        # TODO: 成员七实现
-        # 更新进度条
-        pass
+        self.progress_file.setVisible(True)
+        self.progress_file.setValue(percentage)
+        self.progress_file.setFormat(f"{filename} {percentage}%")
     
     def on_member_list_updated(self, members: list):
         """
@@ -385,9 +386,11 @@ class MainWindow(QMainWindow):
         Args:
             members: 成员列表
         """
-        # TODO: 成员七实现
-        # 更新UI中的成员列表
-        pass
+        self.list_members.clear()
+        for member in members:
+            item = QListWidgetItem(f"{member.username} ({member.ip})")
+            item.setData(Qt.ItemDataRole.UserRole, member)
+            self.list_members.addItem(item)
     
     def append_chat_message(self, sender: str, content: str, is_broadcast: bool = False):
         """
@@ -443,6 +446,8 @@ class MainWindow(QMainWindow):
                 self.network_discovery.stop()
             if self.file_transfer:
                 self.file_transfer.stop()
+            if self.message_dispatcher:
+                self.message_dispatcher.stop()
             event.accept()
         else:
             event.ignore()

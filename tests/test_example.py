@@ -6,11 +6,11 @@
 import sys
 import os
 
-# 添加src目录到路径
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+# 添加项目根目录到路径，再使用 src.* 形式导入
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from common.message_types import Member, ChatMessage, MessageType
-from common.utils import get_local_ip, serialize_message, deserialize_message
+from src.common.message_types import Member, ChatMessage, MessageType
+from src.common.utils import get_local_ip, serialize_message, deserialize_message
 
 
 def test_member_creation():

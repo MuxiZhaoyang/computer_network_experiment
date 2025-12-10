@@ -53,27 +53,21 @@ class MessageBroadcast(QObject):
             bool: 发送是否成功
         """
         try:
-            # TODO: 成员三实现
-            # 1. 构造ChatMessage对象，类型为BROADCAST_MESSAGE
-            # 2. 转换为字典：message.to_dict()
-            # 3. 遍历self.member_list
-            # 4. 对每个成员使用 self.dispatcher.send_message() 发送
-            # 5. 返回发送结果
-            
-            # 示例代码：
-            # message = ChatMessage(
-            #     msg_type=MessageType.BROADCAST_MESSAGE,
-            #     sender=self.local_member,
-            #     content=content
-            # )
-            # message_dict = message.to_dict()
-            # success = True
-            # for member in self.member_list:
-            #     if not self.dispatcher.send_message(
-            #         message_dict, member.ip, member.udp_port):
-            #         success = False
-            # return success
-            pass
+            message = ChatMessage(
+                msg_type=MessageType.BROADCAST_MESSAGE,
+                sender=self.local_member,
+                content=content
+            )
+            message_dict = message.to_dict()
+            success = True
+            for member in self.member_list:
+                if not self.dispatcher.send_message(
+                    message_dict,
+                    member.ip,
+                    member.udp_port
+                ):
+                    success = False
+            return success
         except Exception as e:
             print(f"发送广播消息失败: {e}")
             return False
@@ -87,14 +81,8 @@ class MessageBroadcast(QObject):
             addr: 发送者地址
         """
         try:
-            # TODO: 成员三实现
-            # 1. 从字典创建ChatMessage对象
-            # 2. 触发broadcast_received信号
-            
-            # 示例代码：
-            # chat_message = ChatMessage.from_dict(message)
-            # self.broadcast_received.emit(chat_message)
-            pass
+            chat_message = ChatMessage.from_dict(message)
+            self.broadcast_received.emit(chat_message)
         except Exception as e:
             print(f"处理广播消息失败: {e}")
 

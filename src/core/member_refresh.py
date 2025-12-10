@@ -45,23 +45,16 @@ class MemberRefresh(QObject):
             return
         
         try:
-            # TODO: 成员六实现
-            # 1. 设置刷新标志：self.is_refreshing = True
-            # 2. 触发refresh_started信号
-            # 3. 构造REFRESH类型的ChatMessage
-            # 4. 使用 self.dispatcher.broadcast_message() 广播
-            # 5. 可以设置定时器，超时后触发refresh_completed信号
-            
-            # 示例代码：
-            # self.is_refreshing = True
-            # self.refresh_started.emit()
-            # message = ChatMessage(
-            #     msg_type=MessageType.REFRESH,
-            #     sender=self.local_member,
-            #     content=REFRESH_KEYWORD
-            # )
-            # self.dispatcher.broadcast_message(message.to_dict())
-            pass
+            self.is_refreshing = True
+            self.refresh_started.emit()
+            message = ChatMessage(
+                msg_type=MessageType.REFRESH,
+                sender=self.local_member,
+                content=REFRESH_KEYWORD
+            )
+            self.dispatcher.broadcast_udp(message.to_dict())
+            # 简化处理：立即允许再次刷新
+            self.is_refreshing = False
         except Exception as e:
             print(f"刷新成员列表失败: {e}")
             self.is_refreshing = False
@@ -75,14 +68,16 @@ class MemberRefresh(QObject):
             addr: 发送者地址
         """
         try:
-            # TODO: 成员六实现
-            # 判断是刷新请求还是响应，分别处理
-            # 如果是请求，返回本地信息
-            # 如果是响应，提取成员信息
-            
-            # 注意：刷新消息可以复用DISCOVERY_RESPONSE
-            # 或者定义新的REFRESH_RESPONSE类型
-            pass
+            msg_type = message.get('msg_type')
+            if msg_type != MessageType.REFRESH.value:
+                return
+            # 收到刷新请求，回一个发现响应，便于对方更新列表
+            response = ChatMessage(
+                msg_type=MessageType.DISCOVERY_RESPONSE,
+                sender=self.local_member,
+                content="REFRESH_RESPONSE"
+            )
+            self.dispatcher.send_message(response.to_dict(), addr[0], addr[1])
         except Exception as e:
             print(f"处理刷新消息失败: {e}")
 

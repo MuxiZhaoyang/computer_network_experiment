@@ -114,15 +114,9 @@ class MessageDispatcher(QObject):
             print(f"发送消息失败: {e}")
             return False
     
-    def broadcast_message(self, message_dict: dict) -> bool:
+    def broadcast_udp(self, message_dict: dict) -> bool:
         """
-        广播UDP消息
-        
-        Args:
-            message_dict: 消息字典
-            
-        Returns:
-            bool: 是否发送成功
+        广播UDP消息（发送接口）
         """
         return self.send_message(message_dict, BROADCAST_ADDRESS, DEFAULT_UDP_PORT)
     

@@ -5,6 +5,9 @@ PyQt6==6.6.1
 PyQt6-Qt6==6.6.1
 PyQt6-sip==13.6.0
 
+# 测试框架
+pytest>=7.4
+
 # 网络和数据处理（Python标准库已包含，无需额外安装）
 # - socket: 网络编程
 # - threading: 多线程支持
