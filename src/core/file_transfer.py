@@ -57,7 +57,7 @@ class FileTransfer(QObject):
             self.tcp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.tcp_socket.bind(('', DEFAULT_TCP_PORT))
             self.tcp_socket.listen(5)
-            self.tcp_socket.settimeout(1.0)
+            self.tcp_socket.settimeout(5.0)
             self.is_running = True
             self.listen_thread = threading.Thread(target=self._listen_loop, daemon=True)
             self.listen_thread.start()
