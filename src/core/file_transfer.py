@@ -6,7 +6,7 @@
 import os
 import socket
 import threading
-from typing import Optional, Callable
+from typing import Optional, Callable, Dict, Tuple
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from ..common.config import *
@@ -37,6 +37,9 @@ class FileTransfer(QObject):
         self.tcp_socket: Optional[socket.socket] = None
         self.is_running = False
         self.listen_thread: Optional[threading.Thread] = None
+
+        # 记录等待用户确认的传输：key 为 (ip, filename)
+        self._pending: Dict[Tuple[str, str], dict] = {}
         
         # 确保下载目录存在
         if not os.path.exists(DOWNLOAD_DIR):
@@ -97,13 +100,52 @@ class FileTransfer(QObject):
             receiver: 接收者
         """
         try:
-            # 未实现完整文件传输，此处仅占位防止崩溃
             filename = os.path.basename(file_path)
             if not os.path.exists(file_path):
                 print(f"文件不存在: {file_path}")
                 self.transfer_completed.emit(filename, False)
                 return
-            self.transfer_completed.emit(filename, False)
+
+            filesize = os.path.getsize(file_path)
+            if filesize > MAX_FILE_SIZE:
+                print("文件过大")
+                self.transfer_completed.emit(filename, False)
+                return
+
+            # 连接对方
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(5)
+                s.connect((receiver.ip, receiver.tcp_port))
+
+                info = FileTransferInfo(
+                    filename=filename,
+                    filesize=filesize,
+                    sender=self.local_member,
+                    receiver=receiver
+                )
+                header = serialize_message(info.to_dict())
+                header_len = len(header).to_bytes(4, 'big')
+                s.sendall(header_len + header)
+
+                # 等待对方接受/拒绝
+                resp = s.recv(1)
+                if not resp or resp != b'1':
+                    print("对方拒绝接收文件")
+                    self.transfer_completed.emit(filename, False)
+                    return
+
+                sent = 0
+                with open(file_path, 'rb') as f:
+                    while True:
+                        chunk = f.read(FILE_CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        s.sendall(chunk)
+                        sent += len(chunk)
+                        percent = int(sent * 100 / filesize) if filesize else 100
+                        self.transfer_progress.emit(filename, percent)
+
+                self.transfer_completed.emit(filename, True)
         except Exception as e:
             print(f"发送文件失败: {e}")
             self.transfer_completed.emit(os.path.basename(file_path), False)
@@ -134,22 +176,84 @@ class FileTransfer(QObject):
             addr: 客户端地址
         """
         try:
-            # 简化：当前未实现完整文件接收，直接关闭
-            client_socket.close()
+            key = None
+            client_socket.settimeout(5)
+            # 读取头长度
+            head_len_bytes = self._recv_exact(client_socket, 4)
+            if not head_len_bytes:
+                return
+            head_len = int.from_bytes(head_len_bytes, 'big')
+            header_bytes = self._recv_exact(client_socket, head_len)
+            if not header_bytes:
+                return
+            header_dict = deserialize_message(header_bytes)
+            if not header_dict:
+                return
+            file_info = FileTransferInfo.from_dict(header_dict)
+
+            key = (addr[0], file_info.filename)
+            decision_event = threading.Event()
+            self._pending[key] = {
+                'event': decision_event,
+                'accepted': None,
+                'socket': client_socket,
+                'info': file_info,
+                'save_path': None,
+            }
+
+            # 询问用户
+            self.file_request_received.emit(file_info)
+
+            # 等待用户选择，超时拒绝
+            decision_event.wait(timeout=30)
+            accepted = self._pending.get(key, {}).get('accepted')
+            if not accepted:
+                client_socket.sendall(b'0')
+                return
+
+            client_socket.sendall(b'1')
+
+            chosen = self._pending.get(key, {}).get('save_path')
+            save_path = chosen if chosen else self._prepare_save_path(file_info.filename)
+            if save_path:
+                folder = os.path.dirname(save_path)
+                if folder and not os.path.exists(folder):
+                    os.makedirs(folder, exist_ok=True)
+            received = 0
+            with open(save_path, 'wb') as f:
+                while received < file_info.filesize:
+                    chunk = client_socket.recv(FILE_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    received += len(chunk)
+                    percent = int(received * 100 / file_info.filesize) if file_info.filesize else 100
+                    self.transfer_progress.emit(file_info.filename, percent)
+
+            success = received == file_info.filesize
+            self.transfer_completed.emit(file_info.filename, success)
         except Exception as e:
             print(f"接收文件失败: {e}")
         finally:
+            if key and key in self._pending:
+                self._pending.pop(key, None)
             client_socket.close()
     
-    def accept_file(self, file_info: FileTransferInfo):
+    def accept_file(self, file_info: FileTransferInfo, save_path: Optional[str] = None):
         """
         接受文件传输
         
         Args:
             file_info: 文件传输信息
+            save_path: 保存路径（含文件名），可选
         """
-        # 占位：未实现
-        print("暂未实现文件接收确认")
+        key = (file_info.sender.ip, file_info.filename)
+        pending = self._pending.get(key)
+        if pending:
+            pending['accepted'] = True
+            if save_path:
+                pending['save_path'] = save_path
+            pending['event'].set()
     
     def reject_file(self, file_info: FileTransferInfo):
         """
@@ -158,5 +262,33 @@ class FileTransfer(QObject):
         Args:
             file_info: 文件传输信息
         """
-        print("已拒绝文件传输（未实现实际通信）")
+        key = (file_info.sender.ip, file_info.filename)
+        pending = self._pending.get(key)
+        if pending:
+            pending['accepted'] = False
+            pending['event'].set()
+
+    def _recv_exact(self, sock: socket.socket, size: int) -> Optional[bytes]:
+        data = b''
+        try:
+            while len(data) < size:
+                chunk = sock.recv(size - len(data))
+                if not chunk:
+                    return None
+                data += chunk
+            return data
+        except Exception:
+            return None
+
+    def _prepare_save_path(self, filename: str) -> str:
+        base = os.path.join(DOWNLOAD_DIR, filename)
+        if not os.path.exists(base):
+            return base
+        name, ext = os.path.splitext(filename)
+        idx = 1
+        while True:
+            candidate = os.path.join(DOWNLOAD_DIR, f"{name}_{idx}{ext}")
+            if not os.path.exists(candidate):
+                return candidate
+            idx += 1
 

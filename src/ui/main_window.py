@@ -56,7 +56,6 @@ class MainWindow(QMainWindow):
         """
         初始化用户界面
         """
-        # TODO: 成员七实现
         # 设置窗口属性
         self.setWindowTitle(WINDOW_TITLE)
         self.setGeometry(100, 100, WINDOW_WIDTH, WINDOW_HEIGHT)
@@ -173,6 +172,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.progress_file)
         
         return panel
+
     
     def create_menu_bar(self):
         """
@@ -286,7 +286,7 @@ class MainWindow(QMainWindow):
             return
         ok = self.message_p2p.send_p2p_message(member, content)
         if ok:
-            self.append_chat_message(self.local_member.username, content)
+            self.append_chat_message(self.local_member.username, content, is_broadcast=False, target=member.username)
             self.input_message.clear()
         else:
             QMessageBox.warning(self, "发送失败", "消息发送失败")
@@ -346,7 +346,11 @@ class MainWindow(QMainWindow):
         Args:
             message: 接收到的消息
         """
-        self.append_chat_message(message.sender.username, message.content)
+        # 仅显示与本地相关的私聊
+        if message.receiver and message.receiver != self.local_member and message.sender != self.local_member:
+            return
+        target = "我" if message.receiver and message.receiver == self.local_member else message.receiver.username if message.receiver else None
+        self.append_chat_message(message.sender.username, message.content, is_broadcast=False, target=target)
     
     def on_broadcast_received(self, message: ChatMessage):
         """
@@ -364,8 +368,27 @@ class MainWindow(QMainWindow):
         Args:
             file_info: 文件传输信息
         """
-        # 简化：当前文件传输未完整实现，仅提示
-        QMessageBox.information(self, "文件请求", f"收到文件请求: {file_info.filename}")
+        reply = QMessageBox.question(
+            self,
+            "文件传输请求",
+            f"来自 {file_info.sender.username} 的文件: {file_info.filename} ({format_file_size(file_info.filesize)})\n是否接受?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            default_path = os.path.join(DOWNLOAD_DIR, file_info.filename)
+            save_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "选择保存位置",
+                default_path,
+                "所有文件 (*.*)"
+            )
+            if save_path:
+                self.file_transfer.accept_file(file_info, save_path)
+            else:
+                self.file_transfer.reject_file(file_info)
+        else:
+            self.file_transfer.reject_file(file_info)
     
     def on_transfer_progress(self, filename: str, percentage: int):
         """
@@ -392,7 +415,7 @@ class MainWindow(QMainWindow):
             item.setData(Qt.ItemDataRole.UserRole, member)
             self.list_members.addItem(item)
     
-    def append_chat_message(self, sender: str, content: str, is_broadcast: bool = False):
+    def append_chat_message(self, sender: str, content: str, is_broadcast: bool = False, target: Optional[str] = None):
         """
         在聊天窗口添加消息
         
@@ -400,10 +423,19 @@ class MainWindow(QMainWindow):
             sender: 发送者
             content: 消息内容
             is_broadcast: 是否是广播消息
+            target: 私聊目标（可选）
         """
-        # TODO: 成员七实现
-        msg_type = "[广播]" if is_broadcast else "[消息]"
-        self.text_chat.append(f"{msg_type} {sender}: {content}")
+        if is_broadcast:
+            prefix = "<span style='color:#9cdcfe;'>[广播]</span>"
+            route = f"{sender} → 所有人"
+        else:
+            prefix = "<span style='color:#ce9178;'>[私聊]</span>"
+            if target:
+                route = f"{sender} → {target}"
+            else:
+                route = sender
+        safe_content = content.replace("<", "&lt;").replace(">", "&gt;")
+        self.text_chat.append(f"{prefix} {route}: {safe_content}")
     
     def show_about(self):
         """
