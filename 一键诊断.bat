@@ -10,3 +10,4 @@ echo.
 python 快速诊断.py
 
 
+

@@ -309,3 +309,4 @@ class FileTransfer(QObject):
             print(f"[文件] 用户拒绝: {file_info.filename}")
 
 
+

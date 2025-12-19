@@ -112,3 +112,4 @@ class MemberManager(QObject):
         self.member_list_updated.emit([])
 
 
+
