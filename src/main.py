@@ -3,7 +3,7 @@
 """
 
 import sys
-from PyQt6.QtWidgets import QApplication, QInputDialog, QMessageBox
+from PyQt5.QtWidgets import QApplication, QInputDialog, QMessageBox
 
 from .common.config import *
 from .common.message_types import *

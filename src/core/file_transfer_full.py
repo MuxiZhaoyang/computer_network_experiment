@@ -308,3 +308,4 @@ class FileTransfer(QObject):
             self.pending_transfers[transfer_key]['accepted'] = False
             print(f"[文件] 用户拒绝: {file_info.filename}")
 
+

@@ -7,7 +7,7 @@
 import socket
 import threading
 from typing import Optional, Dict, Callable
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt5.QtCore import QObject, pyqtSignal
 
 from ..common.config import *
 from ..common.message_types import *
@@ -50,12 +50,13 @@ class MessageDispatcher(QObject):
             # 创建UDP socket
             self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             
-            # 设置socket选项
+            # 设置socket选项 - 允许广播
             self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            # 允许地址重用
             self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             
-            # 绑定到指定端口
-            self.udp_socket.bind(('', DEFAULT_UDP_PORT))
+            # 绑定到所有网络接口的指定端口
+            self.udp_socket.bind(('0.0.0.0', DEFAULT_UDP_PORT))
             
             # 设置为非阻塞模式，避免close时卡住
             self.udp_socket.settimeout(1.0)
@@ -65,10 +66,14 @@ class MessageDispatcher(QObject):
             self.listen_thread = threading.Thread(target=self._listen_loop, daemon=True)
             self.listen_thread.start()
             
-            print(f"消息分发器启动成功，监听端口 {DEFAULT_UDP_PORT}")
+            print(f"[分发器] 启动成功，监听端口 {DEFAULT_UDP_PORT}")
+            print(f"[分发器] 本地IP: {self.local_member.ip}")
+            print(f"[分发器] 广播地址: {BROADCAST_ADDRESS}")
             
         except Exception as e:
-            print(f"启动消息分发器失败: {e}")
+            print(f"[分发器] 启动失败: {e}")
+            import traceback
+            traceback.print_exc()
     
     def stop(self):
         """
@@ -114,9 +119,9 @@ class MessageDispatcher(QObject):
             print(f"发送消息失败: {e}")
             return False
     
-    def broadcast_message(self, message_dict: dict) -> bool:
+    def send_broadcast(self, message_dict: dict) -> bool:
         """
-        广播UDP消息
+        广播UDP消息（方法名改为send_broadcast避免与信号冲突）
         
         Args:
             message_dict: 消息字典
@@ -124,53 +129,77 @@ class MessageDispatcher(QObject):
         Returns:
             bool: 是否发送成功
         """
-        return self.send_message(message_dict, BROADCAST_ADDRESS, DEFAULT_UDP_PORT)
+        result = self.send_message(message_dict, BROADCAST_ADDRESS, DEFAULT_UDP_PORT)
+        if result:
+            msg_type = message_dict.get('msg_type', 'UNKNOWN')
+            print(f"[分发器] 广播发送成功: {msg_type}")
+        return result
     
     def _listen_loop(self):
         """
         监听循环（在独立线程中运行）
         接收所有UDP消息并根据类型分发
         """
+        print("[分发器] 监听线程已启动")
         while self.is_running:
             try:
                 # 接收数据
                 data, addr = self.udp_socket.recvfrom(BUFFER_SIZE)
                 
-                # 忽略来自本机的消息（避免自己收到自己的广播）
-                if addr[0] == self.local_member.ip:
-                    continue
+                print(f"[分发器] 收到消息，来自 {addr[0]}:{addr[1]}")
                 
                 # 反序列化消息
                 message = deserialize_message(data)
                 if not message:
+                    print(f"[分发器] 消息反序列化失败")
+                    continue
+                
+                # 获取消息类型和发送者信息
+                msg_type = message.get('msg_type')
+                sender_data = message.get('sender', {})
+                sender_ip = sender_data.get('ip', 'unknown')
+                sender_name = sender_data.get('username', 'unknown')
+                
+                print(f"[分发器] 消息类型: {msg_type}, 发送者: {sender_name}({sender_ip})")
+                
+                # 检查是否是自己发送的消息（通过发送者信息判断）
+                if sender_ip == self.local_member.ip and sender_data.get('udp_port') == self.local_member.udp_port:
+                    print(f"[分发器] 忽略自己的消息")
                     continue
                 
                 # 根据消息类型分发到相应的信号
-                msg_type = message.get('msg_type')
-                
                 if msg_type == MessageType.DISCOVERY.value:
+                    print(f"[分发器] 分发发现请求")
                     self.discovery_message.emit(message, addr)
                 elif msg_type == MessageType.DISCOVERY_RESPONSE.value:
+                    print(f"[分发器] 分发发现响应")
                     self.discovery_message.emit(message, addr)
                 elif msg_type == MessageType.P2P_MESSAGE.value:
+                    print(f"[分发器] 分发P2P消息")
                     self.p2p_message.emit(message, addr)
                 elif msg_type == MessageType.BROADCAST_MESSAGE.value:
+                    print(f"[分发器] 分发广播消息")
                     self.broadcast_message.emit(message, addr)
                 elif msg_type == MessageType.JOIN.value:
+                    print(f"[分发器] 分发加入消息")
                     self.join_message.emit(message, addr)
                 elif msg_type == MessageType.LEAVE.value:
+                    print(f"[分发器] 分发离开消息")
                     self.leave_message.emit(message, addr)
                 elif msg_type == MessageType.REFRESH.value:
+                    print(f"[分发器] 分发刷新消息")
                     self.refresh_message.emit(message, addr)
                 else:
-                    print(f"未知消息类型: {msg_type}")
+                    print(f"[分发器] 未知消息类型: {msg_type}")
                     
             except socket.timeout:
                 # 超时是正常的，继续循环
                 continue
             except Exception as e:
                 if self.is_running:
-                    print(f"接收消息出错: {e}")
+                    print(f"[分发器] 接收消息出错: {e}")
+                    import traceback
+                    traceback.print_exc()
         
-        print("监听循环已退出")
+        print("[分发器] 监听循环已退出")
 

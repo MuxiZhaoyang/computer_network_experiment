@@ -4,7 +4,7 @@
 """
 
 from typing import Optional
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt5.QtCore import QObject, pyqtSignal
 
 from ..common.config import *
 from ..common.message_types import *
@@ -41,19 +41,13 @@ class NetworkDiscovery(QObject):
         向局域网广播发现请求
         """
         try:
-            # TODO: 成员一实现
-            # 1. 构造ChatMessage对象，类型为DISCOVERY
-            # 2. 转换为字典：message.to_dict()
-            # 3. 使用 self.dispatcher.broadcast_message(message_dict) 发送
-            
-            # 示例代码：
-            # message = ChatMessage(
-            #     msg_type=MessageType.DISCOVERY,
-            #     sender=self.local_member,
-            #     content=DISCOVERY_KEYWORD
-            # )
-            # self.dispatcher.broadcast_message(message.to_dict())
-            pass
+            message = ChatMessage(
+                msg_type=MessageType.DISCOVERY,
+                sender=self.local_member,
+                content=DISCOVERY_KEYWORD
+            )
+            self.dispatcher.send_broadcast(message.to_dict())
+            print(f"[发现] 发送发现广播")
         except Exception as e:
             print(f"发送发现广播失败: {e}")
     
@@ -90,18 +84,14 @@ class NetworkDiscovery(QObject):
             addr: 发送者地址
         """
         try:
-            # TODO: 成员一实现
-            # 1. 构造DISCOVERY_RESPONSE类型的响应消息
-            # 2. 使用 self.dispatcher.send_message() 发送给请求者
-            
-            # 示例代码：
-            # response = ChatMessage(
-            #     msg_type=MessageType.DISCOVERY_RESPONSE,
-            #     sender=self.local_member,
-            #     content="RESPONSE"
-            # )
-            # self.dispatcher.send_message(response.to_dict(), addr[0], addr[1])
-            pass
+            print(f"[发现] 收到发现请求，来自 {addr[0]}")
+            response = ChatMessage(
+                msg_type=MessageType.DISCOVERY_RESPONSE,
+                sender=self.local_member,
+                content="RESPONSE"
+            )
+            self.dispatcher.send_message(response.to_dict(), addr[0], addr[1])
+            print(f"[发现] 已响应发现请求")
         except Exception as e:
             print(f"处理发现请求失败: {e}")
     
@@ -114,16 +104,11 @@ class NetworkDiscovery(QObject):
             addr: 发送者地址
         """
         try:
-            # TODO: 成员一实现
-            # 1. 从message中提取sender信息
-            # 2. 创建Member对象
-            # 3. 触发member_discovered信号
-            
-            # 示例代码：
-            # sender_data = message.get('sender')
-            # member = Member.from_dict(sender_data)
-            # self.member_discovered.emit(member)
-            pass
+            sender_data = message.get('sender')
+            if sender_data:
+                member = Member.from_dict(sender_data)
+                print(f"[发现] 发现成员: {member.username} ({member.ip})")
+                self.member_discovered.emit(member)
         except Exception as e:
             print(f"处理发现响应失败: {e}")
 

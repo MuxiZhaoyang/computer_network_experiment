@@ -68,7 +68,7 @@ class MemberManager(QObject):
                 sender=self.local_member,
                 content="JOIN"
             )
-            self.dispatcher.send_broadcast(message.to_dict())
+            self.dispatcher.broadcast_message(message.to_dict())
             print("[管理] 广播加入消息")
         except Exception as e:
             print(f"广播加入消息失败: {e}")
@@ -81,7 +81,7 @@ class MemberManager(QObject):
                 sender=self.local_member,
                 content="LEAVE"
             )
-            self.dispatcher.send_broadcast(message.to_dict())
+            self.dispatcher.broadcast_message(message.to_dict())
             print("[管理] 广播离开消息")
         except Exception as e:
             print(f"广播离开消息失败: {e}")
@@ -110,4 +110,5 @@ class MemberManager(QObject):
         """清空成员列表"""
         self.members.clear()
         self.member_list_updated.emit([])
+
 

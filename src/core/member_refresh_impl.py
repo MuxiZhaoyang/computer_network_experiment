@@ -40,7 +40,7 @@ class MemberRefresh(QObject):
                 sender=self.local_member,
                 content=REFRESH_KEYWORD
             )
-            self.dispatcher.send_broadcast(message.to_dict())
+            self.dispatcher.broadcast_message(message.to_dict())
             
             # 3秒后触发完成
             QTimer.singleShot(3000, self._on_refresh_timeout)
@@ -77,4 +77,5 @@ class MemberRefresh(QObject):
                     
         except Exception as e:
             print(f"处理刷新消息失败: {e}")
+
 
