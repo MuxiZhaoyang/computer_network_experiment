@@ -3,7 +3,7 @@
 功能：实现客户端之间一对一即时消息的发送和接收
 """
 
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt5.QtCore import QObject, pyqtSignal
 
 from ..common.config import *
 from ..common.message_types import *

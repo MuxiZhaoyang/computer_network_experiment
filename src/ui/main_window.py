@@ -5,14 +5,13 @@
 
 import sys
 from typing import Optional
-from PyQt6.QtWidgets import (
+from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QLineEdit, QPushButton, QListWidget,
     QLabel, QFileDialog, QMessageBox, QSplitter,
-    QGroupBox, QProgressBar, QListWidgetItem
+    QGroupBox, QProgressBar, QListWidgetItem, QAction
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QAction
+from PyQt5.QtCore import Qt, QTimer
 
 from ..common.config import *
 from ..common.message_types import *
@@ -74,7 +73,7 @@ class MainWindow(QMainWindow):
         right_panel = self.create_chat_panel()
         
         # 使用分割器
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(left_panel)
         splitter.addWidget(right_panel)
         splitter.setStretchFactor(0, 1)
@@ -168,6 +167,10 @@ class MainWindow(QMainWindow):
         
         # 文件传输进度条
         self.progress_file = QProgressBar()
+        self.progress_file.setMinimum(0)
+        self.progress_file.setMaximum(100)
+        self.progress_file.setTextVisible(True)
+        self.progress_file.setMinimumHeight(25)  # 设置最小高度确保可见
         self.progress_file.setVisible(False)
         layout.addWidget(self.progress_file)
         
@@ -253,8 +256,13 @@ class MainWindow(QMainWindow):
         self.network_discovery.member_discovered.connect(self.on_member_discovered)
         self.message_p2p.message_received.connect(self.on_message_received)
         self.message_broadcast.broadcast_received.connect(self.on_broadcast_received)
-        self.file_transfer.file_request_received.connect(self.on_file_request)
-        self.file_transfer.transfer_progress.connect(self.on_transfer_progress)
+        
+        # 文件传输信号 - 使用Qt.QueuedConnection确保线程安全
+        from PyQt5.QtCore import Qt
+        self.file_transfer.file_request_received.connect(self.on_file_request, Qt.QueuedConnection)
+        self.file_transfer.transfer_progress.connect(self.on_transfer_progress, Qt.QueuedConnection)
+        self.file_transfer.transfer_completed.connect(self.on_transfer_completed, Qt.QueuedConnection)
+        
         self.member_manager.member_list_updated.connect(self.on_member_list_updated)
 
         # member list sync to broadcast module
@@ -267,8 +275,27 @@ class MainWindow(QMainWindow):
         """
         刷新成员列表按钮点击事件
         """
-        if self.member_refresh:
-            self.member_refresh.refresh_members()
+        if not self.member_manager:
+            return
+            
+        # 简单方案：清空列表并重新发送发现广播
+        try:
+            # 1. 清空现有成员列表
+            self.member_manager.clear_members()
+            
+            # 2. 重新发送发现广播（和启动时一样）
+            if self.network_discovery:
+                self.network_discovery.send_discovery_broadcast()
+            
+            # 3. 重新广播自己的加入消息
+            if self.member_manager:
+                self.member_manager.broadcast_join()
+            
+            # 4. 更新状态栏
+            self.statusBar().showMessage('已刷新成员列表', 2000)
+            
+        except Exception as e:
+            self.statusBar().showMessage(f'刷新失败: {e}', 3000)
     
     def on_send_message(self):
         """
@@ -281,7 +308,7 @@ class MainWindow(QMainWindow):
         if not current_item:
             QMessageBox.information(self, "提示", "请选择一个成员再发送消息")
             return
-        member = current_item.data(Qt.ItemDataRole.UserRole)
+        member = current_item.data(Qt.UserRole)
         if not isinstance(member, Member):
             return
         ok = self.message_p2p.send_p2p_message(member, content)
@@ -313,7 +340,7 @@ class MainWindow(QMainWindow):
         if not current_item:
             QMessageBox.information(self, "提示", "请选择一个成员")
             return
-        member = current_item.data(Qt.ItemDataRole.UserRole)
+        member = current_item.data(Qt.UserRole)
         if not isinstance(member, Member):
             return
         file_path, _ = QFileDialog.getOpenFileName(self, "选择要发送的文件")
@@ -372,10 +399,10 @@ class MainWindow(QMainWindow):
             self,
             "文件传输请求",
             f"来自 {file_info.sender.username} 的文件: {file_info.filename} ({format_file_size(file_info.filesize)})\n是否接受?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes
         )
-        if reply == QMessageBox.StandardButton.Yes:
+        if reply == QMessageBox.Yes:
             default_path = os.path.join(DOWNLOAD_DIR, file_info.filename)
             save_path, _ = QFileDialog.getSaveFileName(
                 self,
@@ -398,9 +425,46 @@ class MainWindow(QMainWindow):
             filename: 文件名
             percentage: 进度百分比
         """
-        self.progress_file.setVisible(True)
-        self.progress_file.setValue(percentage)
-        self.progress_file.setFormat(f"{filename} {percentage}%")
+        try:
+            print(f"[UI] 传输进度: {filename} {percentage}%")
+            print(f"[UI] 进度条可见性(前): {self.progress_file.isVisible()}")
+            self.progress_file.show()  # 使用show()而不是setVisible(True)
+            self.progress_file.setValue(percentage)
+            self.progress_file.setFormat(f"{filename} {percentage}%")
+            print(f"[UI] 进度条可见性(后): {self.progress_file.isVisible()}, 值: {self.progress_file.value()}")
+            # 强制重绘
+            self.progress_file.repaint()
+        except Exception as e:
+            print(f"更新传输进度失败: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def on_transfer_completed(self, filename: str, success: bool):
+        """
+        文件传输完成信号的槽函数
+        
+        Args:
+            filename: 文件名
+            success: 是否成功
+        """
+        try:
+            print(f"[UI] 传输完成: {filename}, 成功={success}")
+            # 隐藏进度条
+            self.progress_file.setVisible(False)
+            self.progress_file.setValue(0)
+            
+            # 显示结果消息
+            if success:
+                self.statusBar().showMessage(f'文件传输成功: {filename}', 3000)
+                # 在聊天窗口显示系统消息（不使用私聊/广播前缀）
+                self.text_chat.append(f"<span style='color:#4ec9b0;'>[系统]</span> 文件传输成功: {filename}")
+            else:
+                self.statusBar().showMessage(f'文件传输失败: {filename}', 3000)
+                self.text_chat.append(f"<span style='color:#f48771;'>[系统]</span> 文件传输失败: {filename}")
+        except Exception as e:
+            print(f"处理传输完成失败: {e}")
+            import traceback
+            traceback.print_exc()
     
     def on_member_list_updated(self, members: list):
         """
@@ -412,7 +476,7 @@ class MainWindow(QMainWindow):
         self.list_members.clear()
         for member in members:
             item = QListWidgetItem(f"{member.username} ({member.ip})")
-            item.setData(Qt.ItemDataRole.UserRole, member)
+            item.setData(Qt.UserRole, member)
             self.list_members.addItem(item)
     
     def append_chat_message(self, sender: str, content: str, is_broadcast: bool = False, target: Optional[str] = None):
@@ -466,11 +530,11 @@ class MainWindow(QMainWindow):
             self,
             '确认退出',
             '确定要退出吗？',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
         )
         
-        if reply == QMessageBox.StandardButton.Yes:
+        if reply == QMessageBox.Yes:
             # 清理资源
             if self.member_manager:
                 self.member_manager.broadcast_leave()

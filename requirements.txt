@@ -1,9 +1,9 @@
 # 简易即时通信工具依赖包
 
 # GUI框架
-PyQt6==6.6.1
-PyQt6-Qt6==6.6.1
-PyQt6-sip==13.6.0
+# 注意：已从PyQt6迁移到PyQt5以解决DLL加载问题
+PyQt5>=5.15.0
+PyQt5-sip>=12.13.0
 
 # 测试框架
 pytest>=7.4

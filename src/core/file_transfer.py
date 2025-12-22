@@ -7,7 +7,7 @@ import os
 import socket
 import threading
 from typing import Optional, Callable, Dict, Tuple
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt5.QtCore import QObject, pyqtSignal
 
 from ..common.config import *
 from ..common.message_types import *
@@ -143,8 +143,10 @@ class FileTransfer(QObject):
                         s.sendall(chunk)
                         sent += len(chunk)
                         percent = int(sent * 100 / filesize) if filesize else 100
+                        print(f"[文件传输] 发送进度: {filename} {percent}%")
                         self.transfer_progress.emit(filename, percent)
 
+                print(f"[文件传输] 发送完成: {filename}")
                 self.transfer_completed.emit(filename, True)
         except Exception as e:
             print(f"发送文件失败: {e}")
@@ -228,16 +230,29 @@ class FileTransfer(QObject):
                     f.write(chunk)
                     received += len(chunk)
                     percent = int(received * 100 / file_info.filesize) if file_info.filesize else 100
+                    print(f"[文件传输] 接收进度: {file_info.filename} {percent}%")
                     self.transfer_progress.emit(file_info.filename, percent)
 
             success = received == file_info.filesize
+            print(f"[文件传输] 接收完成: {file_info.filename}, 成功={success}")
             self.transfer_completed.emit(file_info.filename, success)
         except Exception as e:
             print(f"接收文件失败: {e}")
+            import traceback
+            traceback.print_exc()
+            # 即使失败也要发送完成信号
+            try:
+                if 'file_info' in locals():
+                    self.transfer_completed.emit(file_info.filename, False)
+            except:
+                pass
         finally:
-            if key and key in self._pending:
-                self._pending.pop(key, None)
-            client_socket.close()
+            try:
+                if key and key in self._pending:
+                    self._pending.pop(key, None)
+                client_socket.close()
+            except:
+                pass
     
     def accept_file(self, file_info: FileTransferInfo, save_path: Optional[str] = None):
         """

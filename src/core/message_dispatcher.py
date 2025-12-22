@@ -7,7 +7,7 @@
 import socket
 import threading
 from typing import Optional, Dict, Callable
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt5.QtCore import QObject, pyqtSignal
 
 from ..common.config import *
 from ..common.message_types import *
