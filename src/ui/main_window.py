@@ -4,6 +4,9 @@
 """
 
 import sys
+import os
+import logging
+import html
 from typing import Optional
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -165,14 +168,8 @@ class MainWindow(QMainWindow):
         
         layout.addLayout(input_layout)
         
-        # 文件传输进度条
-        self.progress_file = QProgressBar()
-        self.progress_file.setMinimum(0)
-        self.progress_file.setMaximum(100)
-        self.progress_file.setTextVisible(True)
-        self.progress_file.setMinimumHeight(25)  # 设置最小高度确保可见
-        self.progress_file.setVisible(False)
-        layout.addWidget(self.progress_file)
+        # 不再使用进度条，改用文本显示
+        # 传输进度将显示在聊天窗口和状态栏
         
         return panel
 
@@ -257,11 +254,11 @@ class MainWindow(QMainWindow):
         self.message_p2p.message_received.connect(self.on_message_received)
         self.message_broadcast.broadcast_received.connect(self.on_broadcast_received)
         
-        # 文件传输信号 - 使用Qt.QueuedConnection确保线程安全
-        from PyQt5.QtCore import Qt
-        self.file_transfer.file_request_received.connect(self.on_file_request, Qt.QueuedConnection)
-        self.file_transfer.transfer_progress.connect(self.on_transfer_progress, Qt.QueuedConnection)
-        self.file_transfer.transfer_completed.connect(self.on_transfer_completed, Qt.QueuedConnection)
+        # 文件传输信号 - PyQt5需要明确指定连接类型
+        # 使用AutoConnection让Qt自动选择（跨线程时会自动使用QueuedConnection）
+        self.file_transfer.file_request_received.connect(self.on_file_request)
+        self.file_transfer.transfer_progress.connect(self.on_transfer_progress)
+        self.file_transfer.transfer_completed.connect(self.on_transfer_completed)
         
         self.member_manager.member_list_updated.connect(self.on_member_list_updated)
 
@@ -388,83 +385,111 @@ class MainWindow(QMainWindow):
         """
         self.append_chat_message(message.sender.username, message.content, is_broadcast=True)
     
-    def on_file_request(self, file_info: FileTransferInfo):
+    def on_file_request(self, filename, filesize, sender_ip, sender_name):
         """
-        收到文件传输请求信号的槽函数
-        
-        Args:
-            file_info: 文件传输信息
-        """
-        reply = QMessageBox.question(
-            self,
-            "文件传输请求",
-            f"来自 {file_info.sender.username} 的文件: {file_info.filename} ({format_file_size(file_info.filesize)})\n是否接受?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes
-        )
-        if reply == QMessageBox.Yes:
-            default_path = os.path.join(DOWNLOAD_DIR, file_info.filename)
-            save_path, _ = QFileDialog.getSaveFileName(
-                self,
-                "选择保存位置",
-                default_path,
-                "所有文件 (*.*)"
-            )
-            if save_path:
-                self.file_transfer.accept_file(file_info, save_path)
-            else:
-                self.file_transfer.reject_file(file_info)
-        else:
-            self.file_transfer.reject_file(file_info)
-    
-    def on_transfer_progress(self, filename: str, percentage: int):
-        """
-        文件传输进度信号的槽函数
+        收到文件传输请求信号的槽函数 - PyQt5版本
         
         Args:
             filename: 文件名
-            percentage: 进度百分比
+            filesize: 文件大小
+            sender_ip: 发送者IP
+            sender_name: 发送者用户名
         """
         try:
-            print(f"[UI] 传输进度: {filename} {percentage}%")
-            print(f"[UI] 进度条可见性(前): {self.progress_file.isVisible()}")
-            self.progress_file.show()  # 使用show()而不是setVisible(True)
-            self.progress_file.setValue(percentage)
-            self.progress_file.setFormat(f"{filename} {percentage}%")
-            print(f"[UI] 进度条可见性(后): {self.progress_file.isVisible()}, 值: {self.progress_file.value()}")
-            # 强制重绘
-            self.progress_file.repaint()
-        except Exception as e:
-            print(f"更新传输进度失败: {e}")
-            import traceback
-            traceback.print_exc()
-    
-    def on_transfer_completed(self, filename: str, success: bool):
-        """
-        文件传输完成信号的槽函数
-        
-        Args:
-            filename: 文件名
-            success: 是否成功
-        """
-        try:
-            print(f"[UI] 传输完成: {filename}, 成功={success}")
-            # 隐藏进度条
-            self.progress_file.setVisible(False)
-            self.progress_file.setValue(0)
+            logging.info(f"[文件请求] {sender_name}({sender_ip}) 发送: {filename} ({filesize}字节)")
             
-            # 显示结果消息
-            if success:
-                self.statusBar().showMessage(f'文件传输成功: {filename}', 3000)
-                # 在聊天窗口显示系统消息（不使用私聊/广播前缀）
-                self.text_chat.append(f"<span style='color:#4ec9b0;'>[系统]</span> 文件传输成功: {filename}")
+            reply = QMessageBox.question(
+                self,
+                "文件传输请求",
+                f"来自 {sender_name} 的文件: {filename} ({format_file_size(filesize)})\n是否接受?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            
+            # 重新构建FileTransferInfo对象
+            from ..common.message_types import Member, FileTransferInfo
+            sender = Member(sender_name, sender_ip, DEFAULT_UDP_PORT, DEFAULT_TCP_PORT)
+            file_info = FileTransferInfo(filename, filesize, sender, self.local_member)
+            
+            if reply == QMessageBox.Yes:
+                default_path = os.path.join(DOWNLOAD_DIR, filename)
+                save_path, _ = QFileDialog.getSaveFileName(
+                    self,
+                    "选择保存位置",
+                    default_path,
+                    "所有文件 (*.*)"
+                )
+                if save_path:
+                    logging.info(f"[文件请求] 接受文件，保存到: {save_path}")
+                    self.file_transfer.accept_file(file_info, save_path)
+                else:
+                    logging.info(f"[文件请求] 取消保存")
+                    self.file_transfer.reject_file(file_info)
             else:
-                self.statusBar().showMessage(f'文件传输失败: {filename}', 3000)
-                self.text_chat.append(f"<span style='color:#f48771;'>[系统]</span> 文件传输失败: {filename}")
+                logging.info(f"[文件请求] 拒绝接收")
+                self.file_transfer.reject_file(file_info)
+                
         except Exception as e:
-            print(f"处理传输完成失败: {e}")
+            logging.error(f"[文件请求] 处理失败: {e}")
             import traceback
-            traceback.print_exc()
+            logging.error(traceback.format_exc())
+    
+    def on_transfer_progress(self, filename, percentage):
+        """文件传输进度更新 - 使用文本显示"""
+        try:
+            if percentage % 25 == 0:  # 只记录关键进度点
+                logging.info(f"[传输进度] {filename}: {percentage}%")
+            
+            # HTML转义文件名
+            safe_filename = html.escape(filename)
+            
+            # 在状态栏显示进度
+            self.statusBar().showMessage(f'正在传输: {safe_filename} ({percentage}%)')
+            
+            # 每25%在聊天窗口显示一次进度（避免刷屏）
+            if percentage % 25 == 0 or percentage == 100:
+                progress_bar = '█' * (percentage // 5) + '░' * (20 - percentage // 5)
+                self.text_chat.append(
+                    f"<span style='color:#569cd6;'>[传输] {safe_filename}: {progress_bar} {percentage}%</span>"
+                )
+                logging.debug(f"[传输进度] 进度条已更新")
+        except Exception as e:
+            logging.error(f"[传输进度] 更新失败: {e}")
+            import traceback
+            logging.error(traceback.format_exc())
+    
+    def on_transfer_completed(self, filename, success):
+        """文件传输完成 - 使用文本显示"""
+        try:
+            logging.info(f"[传输完成] {filename}: {'成功' if success else '失败'}")
+            
+            # HTML转义文件名，避免特殊字符导致显示问题
+            safe_filename = html.escape(filename)
+            
+            if success:
+                msg = f"✓ 文件传输成功: {safe_filename}"
+                self.text_chat.append(
+                    f"<span style='color:#4ec9b0;font-weight:bold;'>{msg}</span>"
+                )
+                self.statusBar().showMessage(f'✓ 文件传输成功: {filename}', 5000)
+                logging.info(f"[传输完成] 成功消息已显示")
+            else:
+                msg = f"✗ 文件传输失败: {safe_filename}"
+                self.text_chat.append(
+                    f"<span style='color:#f48771;font-weight:bold;'>{msg}</span>"
+                )
+                self.statusBar().showMessage(f'✗ 文件传输失败: {filename}', 5000)
+                logging.info(f"[传输完成] 失败消息已显示")
+                
+        except Exception as e:
+            logging.error(f"[传输完成] 显示消息失败: {e}")
+            import traceback
+            logging.error(traceback.format_exc())
+            # 即使显示失败，也要确保状态栏更新
+            try:
+                self.statusBar().showMessage(f'文件传输{'成功' if success else '失败'}', 3000)
+            except:
+                pass
     
     def on_member_list_updated(self, members: list):
         """

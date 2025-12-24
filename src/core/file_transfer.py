@@ -7,7 +7,7 @@ import os
 import socket
 import threading
 from typing import Optional, Callable, Dict, Tuple
-from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt5.QtCore import QObject, pyqtSignal, QMetaType
 
 from ..common.config import *
 from ..common.message_types import *
@@ -18,10 +18,13 @@ class FileTransfer(QObject):
     """
     文件传输类
     负责通过TCP协议可靠地传输文件
+    
+    PyQt5注意事项：
+    不在信号中传递自定义对象，改用基本类型
     """
     
-    # 定义信号
-    file_request_received = pyqtSignal(FileTransferInfo)  # 收到文件传输请求
+    # 定义信号 - PyQt5使用基本类型
+    file_request_received = pyqtSignal(str, int, str, str)  # filename, filesize, sender_ip, sender_name
     transfer_progress = pyqtSignal(str, int)  # 传输进度 (filename, percentage)
     transfer_completed = pyqtSignal(str, bool)  # 传输完成 (filename, success)
     
@@ -203,8 +206,13 @@ class FileTransfer(QObject):
                 'save_path': None,
             }
 
-            # 询问用户
-            self.file_request_received.emit(file_info)
+            # 询问用户 - PyQt5: 发送基本类型而不是对象
+            self.file_request_received.emit(
+                file_info.filename,
+                file_info.filesize,
+                file_info.sender.ip,
+                file_info.sender.username
+            )
 
             # 等待用户选择，超时拒绝
             decision_event.wait(timeout=30)
